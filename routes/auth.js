@@ -17,7 +17,6 @@ function requireConfig(config) {
     return config.clientId && config.clientSecret && config.redirectUri && config.jwtSecret;
 }
 
-// Start Discord OAuth
 router.get("/discord", (req, res) => {
     const config = getConfig();
 
@@ -43,18 +42,12 @@ router.get("/discord", (req, res) => {
     res.redirect(`https://discord.com/oauth2/authorize?${params.toString()}`);
 });
 
-// Discord sends the user back here with a temporary code
 router.get("/callback", async (req, res) => {
     const config = getConfig();
     const { code } = req.query;
 
-    if (!code) {
-        return res.status(400).json({ error: "Missing Discord authorization code" });
-    }
-
-    if (!requireConfig(config)) {
-        return res.status(500).json({ error: "Discord OAuth is not configured" });
-    }
+    if (!code) return res.status(400).json({ error: "Missing Discord authorization code" });
+    if (!requireConfig(config)) return res.status(500).json({ error: "Discord OAuth is not configured" });
 
     try {
         const tokenResponse = await axios.post(
@@ -66,31 +59,39 @@ router.get("/callback", async (req, res) => {
                 code,
                 redirect_uri: config.redirectUri
             }),
-            {
-                headers: {
-                    "Content-Type": "application/x-www-form-urlencoded"
-                }
-            }
+            { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
         );
 
         const discordAccessToken = tokenResponse.data.access_token;
-
         const userResponse = await axios.get(`${DISCORD_API}/users/@me`, {
-            headers: {
-                Authorization: `Bearer ${discordAccessToken}`
-            }
+            headers: { Authorization: `Bearer ${discordAccessToken}` }
         });
-
         const user = userResponse.data;
 
         const token = jwt.sign(
-            {
-                discordId: user.id,
-                username: user.username
-            },
+            { discordId: user.id, username: user.username },
             config.jwtSecret,
             { expiresIn: "7d" }
         );
+
+        // Account creation/update is kept behind the internal admin secret.
+        // This is temporary until MongoDB becomes the persistent database.
+        if (process.env.BACKEND_ADMIN_SECRET) {
+            try {
+                await axios.post(
+                    `http://127.0.0.1:${process.env.PORT || 3000}/auth/accounts`,
+                    {
+                        discordId: user.id,
+                        username: user.username,
+                        globalName: user.global_name || null,
+                        avatar: user.avatar || null
+                    },
+                    { headers: { "x-tidal-admin-secret": process.env.BACKEND_ADMIN_SECRET } }
+                );
+            } catch (accountError) {
+                console.error("Tidal account sync failed:", accountError.message);
+            }
+        }
 
         res.json({
             success: true,
@@ -105,28 +106,22 @@ router.get("/callback", async (req, res) => {
         });
     } catch (error) {
         console.error("Discord OAuth error:", error.response?.data || error.message);
-        res.status(401).json({
-            error: "Discord authentication failed"
-        });
+        res.status(401).json({ error: "Discord authentication failed" });
     }
 });
 
-// Check a Tidal JWT
+// Account/admin API is mounted here temporarily so server.js stays compatible.
+router.use("/accounts", require("./accounts.js"));
+
 router.get("/me", (req, res) => {
     const config = getConfig();
     const auth = req.headers.authorization || "";
 
-    if (!auth.startsWith("Bearer ")) {
-        return res.status(401).json({ error: "Missing Bearer token" });
-    }
-
-    if (!config.jwtSecret) {
-        return res.status(500).json({ error: "JWT_SECRET is not configured" });
-    }
+    if (!auth.startsWith("Bearer ")) return res.status(401).json({ error: "Missing Bearer token" });
+    if (!config.jwtSecret) return res.status(500).json({ error: "JWT_SECRET is not configured" });
 
     try {
-        const token = auth.slice(7);
-        const payload = jwt.verify(token, config.jwtSecret);
+        const payload = jwt.verify(auth.slice(7), config.jwtSecret);
         res.json({ authenticated: true, user: payload });
     } catch {
         res.status(401).json({ error: "Invalid or expired token" });
