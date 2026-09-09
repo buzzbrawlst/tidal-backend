@@ -1,24 +1,30 @@
 [
   {
-    "title":"Backend In Progress!!!",
-    "description":"The Tidal Backend is now online.",
-    "category":"Announcement",
-    "date":"September 2026",
-    "image":"https://assetsio.gnwcdn.com/fortnite-chapter-2-season-3-a.jpg?width=1600&height=900&fit=crop&quality=100&format=png&enable=upscale&auto=png"
+    "title": "Backend In Progress!!!",
+    "date": "August 21, 2026",
+    "category": "Announcement",
+    "description": "The Tidal Backend is currently in development and nearly ready for testing. Stay tuned for more information about the backend.",
+    "image": "https://assetsio.gnwcdn.com/fortnite-chapter-2-season-3-a.jpg?width=1600&height=900&fit=crop&quality=100&format=png&enable=upscale&auto=png"
   },
   {
-    "title":"This is a complete test of the backend!",
-    "description":"TEST!",
-    "category":"Announcement",
-    "date":"September 9, 2026",
-    "image":"https://github.com/buzzbrawlst/Downloads.Tidal/blob/main/Images/BANNER.png?raw=true"
+    "title": "Tidal Launcher is coming!",
+    "date": "August 20, 2026",
+    "category": "Launcher",
+    "description": "The Tidal Launcher is currently in development. Stay tuned for more information about the launcher and its upcoming features.",
+    "image": "https://www.gamepur.com/wp-content/uploads/2020/06/17044643/All-Named-Locations-Fortnite-Chapter-2-Season-3.jpg?resize=1536"
   },
-
   {
-    "title":"Backend In Progress!!!",
-    "description":"The Tidal Backend is now online.",
-    "category":"Announcement",
-    "date":"September 2026",
-    "image":"https://..."
+    "title": "Welcome to Tidal",
+    "date": "August 20, 2026",
+    "category": "Project",
+    "description": "Welcome to the official Tidal website. This is where you can find project news, updates, downloads and more.",
+    "image": "https://tse3.mm.bing.net/th/id/OIP.5YBVuMvmGsopJSti61ZqYQHaC8?r=0&rs=1&pid=ImgDetMain&o=7&rm=3"
+  },
+  {
+    "title": "Website Launch",
+    "date": "August 20, 2026",
+    "category": "Website",
+    "description": "The official Tidal website is now live. More features and pages will be added as development continues.",
+    "image": "https://i0.wp.com/saiganak.com/wp-content/uploads/2020/06/fortnite-chapter2-season3-01.jpg"
   }
 ]
