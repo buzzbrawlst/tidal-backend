@@ -1,8 +1,15 @@
 [
+   {
+    "title": "Backend Working and Nearly Done!!!",
+    "date": "September 9, 2026",
+    "category": "Announcement",
+    "description": "The Tidal Backend is currently working online but still hasn't been tested for the actual project game. Stay tuned for more information about the backend.",
+    "image": "https://kotaku.com/app/uploads/2020/06/ul3hgtdd7wzo9esjdriu.jpg"
+  },
   {
     "title": "Backend In Progress!!!",
     "date": "August 21, 2026",
-    "category": "Announcement",
+    "category": "Backend",
     "description": "The Tidal Backend is currently in development and nearly ready for testing. Stay tuned for more information about the backend.",
     "image": "https://assetsio.gnwcdn.com/fortnite-chapter-2-season-3-a.jpg?width=1600&height=900&fit=crop&quality=100&format=png&enable=upscale&auto=png"
   },
