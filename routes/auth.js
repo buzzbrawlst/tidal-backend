@@ -17,6 +17,101 @@ function requireConfig(config) {
     return config.clientId && config.clientSecret && config.redirectUri && config.jwtSecret;
 }
 
+// Launcher flow:
+// The WPF launcher performs Discord OAuth + PKCE itself, then sends the
+// resulting Discord access token here. We verify that token with Discord,
+// create/update the Tidal account, and return a Tidal JWT.
+router.post("/discord", async (req, res) => {
+    const config = getConfig();
+    const discordAccessToken = req.body?.accessToken;
+
+    if (!discordAccessToken || typeof discordAccessToken !== "string") {
+        return res.status(400).json({
+            error: "Missing Discord access token"
+        });
+    }
+
+    if (!config.jwtSecret) {
+        return res.status(500).json({
+            error: "JWT_SECRET is not configured"
+        });
+    }
+
+    try {
+        // Verify the access token directly with Discord.
+        const userResponse = await axios.get(`${DISCORD_API}/users/@me`, {
+            headers: {
+                Authorization: `Bearer ${discordAccessToken}`
+            }
+        });
+
+        const user = userResponse.data;
+
+        if (!user?.id || !user?.username) {
+            return res.status(401).json({
+                error: "Discord returned an invalid user"
+            });
+        }
+
+        const token = jwt.sign(
+            {
+                discordId: user.id,
+                username: user.username
+            },
+            config.jwtSecret,
+            { expiresIn: "7d" }
+        );
+
+        // Keep the existing account system in sync.
+        // This can be moved to MongoDB without changing the launcher API.
+        if (process.env.BACKEND_ADMIN_SECRET) {
+            try {
+                await axios.post(
+                    `http://127.0.0.1:${process.env.PORT || 3000}/auth/accounts`,
+                    {
+                        discordId: user.id,
+                        username: user.username,
+                        globalName: user.global_name || null,
+                        avatar: user.avatar || null
+                    },
+                    {
+                        headers: {
+                            "x-tidal-admin-secret": process.env.BACKEND_ADMIN_SECRET
+                        }
+                    }
+                );
+            } catch (accountError) {
+                console.error(
+                    "Tidal account sync failed:",
+                    accountError.response?.data || accountError.message
+                );
+            }
+        }
+
+        return res.json({
+            success: true,
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                globalName: user.global_name || null,
+                avatar: user.avatar || null,
+                email: user.email || null,
+                isAdmin: false
+            }
+        });
+    } catch (error) {
+        console.error(
+            "Launcher Discord authentication error:",
+            error.response?.data || error.message
+        );
+
+        return res.status(401).json({
+            error: "Discord authentication failed"
+        });
+    }
+});
+
 router.get("/discord", (req, res) => {
     const config = getConfig();
 
