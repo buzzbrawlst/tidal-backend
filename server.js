@@ -3,9 +3,6 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
-// Initialize the local database schema before routes use it.
-require("./database/setup.js");
-
 const app = express();
 
 app.use(cors());
