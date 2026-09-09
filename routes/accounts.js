@@ -1,24 +1,6 @@
 const router = require("express").Router();
-const fs = require("fs");
-const path = require("path");
 const crypto = require("crypto");
-
-const DATA_FILE = path.join(__dirname, "..", "data", "accounts.json");
-
-function readAccounts() {
-    try {
-        return JSON.parse(fs.readFileSync(DATA_FILE, "utf8"));
-    } catch {
-        return [];
-    }
-}
-
-function writeAccounts(accounts) {
-    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-    const temp = `${DATA_FILE}.tmp`;
-    fs.writeFileSync(temp, JSON.stringify(accounts, null, 2) + "\n", "utf8");
-    fs.renameSync(temp, DATA_FILE);
-}
+const { getDb } = require("../db/mongo.js");
 
 function requireAdminSecret(req, res, next) {
     const secret = process.env.BACKEND_ADMIN_SECRET;
@@ -49,99 +31,139 @@ function sanitize(account) {
     };
 }
 
-router.get("/", requireAdminSecret, (req, res) => {
-    const accounts = readAccounts();
-    const search = String(req.query.search || "").trim().toLowerCase();
-    const filtered = search
-        ? accounts.filter(a =>
-            String(a.username).toLowerCase().includes(search) ||
-            String(a.globalName || "").toLowerCase().includes(search) ||
-            String(a.discordId).includes(search) ||
-            String(a.accountId).toLowerCase().includes(search)
-        )
-        : accounts;
+async function findAccount(collection, identifier) {
+    const value = String(identifier);
+    const lower = value.toLowerCase();
+    return collection.findOne({
+        $or: [
+            { accountId: lower },
+            { discordId: value },
+            { username: { $regex: `^${lower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" } }
+        ]
+    });
+}
 
-    res.json({ count: filtered.length, accounts: filtered.map(sanitize) });
+router.get("/", requireAdminSecret, async (req, res) => {
+    try {
+        const db = await getDb();
+        const search = String(req.query.search || "").trim();
+        const filter = search
+            ? {
+                $or: [
+                    { username: { $regex: search, $options: "i" } },
+                    { globalName: { $regex: search, $options: "i" } },
+                    { discordId: search },
+                    { accountId: { $regex: search, $options: "i" } }
+                ]
+            }
+            : {};
+
+        const accounts = await db.collection("accounts").find(filter).toArray();
+        res.json({ count: accounts.length, accounts: accounts.map(sanitize) });
+    } catch (error) {
+        console.error("Account list error:", error);
+        res.status(500).json({ error: "Database error" });
+    }
 });
 
-router.get("/:identifier", requireAdminSecret, (req, res) => {
-    const identifier = String(req.params.identifier).toLowerCase();
-    const account = readAccounts().find(a =>
-        String(a.accountId).toLowerCase() === identifier ||
-        String(a.discordId) === req.params.identifier ||
-        String(a.username).toLowerCase() === identifier
-    );
+router.get("/:identifier", requireAdminSecret, async (req, res) => {
+    try {
+        const db = await getDb();
+        const account = await findAccount(db.collection("accounts"), req.params.identifier);
 
-    if (!account) return res.status(404).json({ error: "Account not found" });
-    res.json({ account: sanitize(account) });
+        if (!account) return res.status(404).json({ error: "Account not found" });
+        res.json({ account: sanitize(account) });
+    } catch (error) {
+        console.error("Account lookup error:", error);
+        res.status(500).json({ error: "Database error" });
+    }
 });
 
-router.post("/", requireAdminSecret, (req, res) => {
+router.post("/", requireAdminSecret, async (req, res) => {
     const { discordId, username, globalName, avatar } = req.body || {};
 
     if (!discordId || !username) {
         return res.status(400).json({ error: "discordId and username are required" });
     }
 
-    const accounts = readAccounts();
-    let account = accounts.find(a => String(a.discordId) === String(discordId));
+    try {
+        const db = await getDb();
+        const collection = db.collection("accounts");
+        let account = await collection.findOne({ discordId: String(discordId) });
 
-    if (account) {
-        account.username = username;
-        account.globalName = globalName || account.globalName || null;
-        account.avatar = avatar || account.avatar || null;
-        writeAccounts(accounts);
-        return res.json({ created: false, account: sanitize(account) });
+        if (account) {
+            await collection.updateOne(
+                { _id: account._id },
+                {
+                    $set: {
+                        username,
+                        globalName: globalName || account.globalName || null,
+                        avatar: avatar || account.avatar || null,
+                        updatedAt: new Date().toISOString()
+                    }
+                }
+            );
+
+            account = await collection.findOne({ _id: account._id });
+            return res.json({ created: false, account: sanitize(account) });
+        }
+
+        account = {
+            accountId: crypto.randomUUID(),
+            discordId: String(discordId),
+            username,
+            globalName: globalName || null,
+            avatar: avatar || null,
+            createdAt: new Date().toISOString(),
+            banned: false,
+            banReason: null,
+            banExpiresAt: null,
+            suspended: false,
+            suspensionReason: null,
+            suspensionExpiresAt: null,
+            admin: false,
+            level: 1,
+            inventory: {}
+        };
+
+        await collection.insertOne(account);
+        res.status(201).json({ created: true, account: sanitize(account) });
+    } catch (error) {
+        console.error("Account creation error:", error);
+        res.status(500).json({ error: "Database error" });
     }
-
-    account = {
-        accountId: crypto.randomUUID(),
-        discordId: String(discordId),
-        username,
-        globalName: globalName || null,
-        avatar: avatar || null,
-        createdAt: new Date().toISOString(),
-        banned: false,
-        banReason: null,
-        banExpiresAt: null,
-        suspended: false,
-        suspensionReason: null,
-        suspensionExpiresAt: null,
-        admin: false,
-        level: 1,
-        inventory: {}
-    };
-
-    accounts.push(account);
-    writeAccounts(accounts);
-    res.status(201).json({ created: true, account: sanitize(account) });
 });
 
-router.patch("/:identifier", requireAdminSecret, (req, res) => {
-    const identifier = String(req.params.identifier).toLowerCase();
-    const accounts = readAccounts();
-    const account = accounts.find(a =>
-        String(a.accountId).toLowerCase() === identifier ||
-        String(a.discordId) === req.params.identifier ||
-        String(a.username).toLowerCase() === identifier
-    );
+router.patch("/:identifier", requireAdminSecret, async (req, res) => {
+    try {
+        const db = await getDb();
+        const collection = db.collection("accounts");
+        const account = await findAccount(collection, req.params.identifier);
 
-    if (!account) return res.status(404).json({ error: "Account not found" });
+        if (!account) return res.status(404).json({ error: "Account not found" });
 
-    const allowed = [
-        "banned", "banReason", "banExpiresAt",
-        "suspended", "suspensionReason", "suspensionExpiresAt",
-        "admin", "level", "inventory", "username", "globalName", "avatar"
-    ];
+        const allowed = [
+            "banned", "banReason", "banExpiresAt",
+            "suspended", "suspensionReason", "suspensionExpiresAt",
+            "admin", "level", "inventory", "username", "globalName", "avatar"
+        ];
 
-    for (const key of allowed) {
-        if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) {
-            account[key] = req.body[key];
+        const updates = {};
+        for (const key of allowed) {
+            if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) {
+                updates[key] = req.body[key];
+            }
         }
-    }
 
-    writeAccounts(accounts);
-    res.json({ account: sanitize(account) });
+        updates.updatedAt = new Date().toISOString();
+        await collection.updateOne({ _id: account._id }, { $set: updates });
+
+        const updated = await collection.findOne({ _id: account._id });
+        res.json({ account: sanitize(updated) });
+    } catch (error) {
+        console.error("Account update error:", error);
+        res.status(500).json({ error: "Database error" });
+    }
 });
 
 module.exports = router;
